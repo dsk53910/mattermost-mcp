@@ -1,0 +1,15 @@
+[project]
+name = "mattermost-mcp"
+version = "0.1.0"
+description = "MCP server for Mattermost over the Web API"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "OpenAI Codex" }
+]
+dependencies = [
+  "playwright>=1.52.0"
+]
+
+[tool.uv]
+package = false

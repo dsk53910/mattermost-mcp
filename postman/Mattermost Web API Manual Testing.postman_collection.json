@@ -1,0 +1,612 @@
+{
+  "info": {
+    "_postman_id": "f9b473e4-5b6e-4d4a-9d0c-4ef1f3521001",
+    "name": "Mattermost Web API Manual Testing",
+    "description": "Manual smoke-testing collection for Mattermost Web API login flow, browser-session cookies, basic read/write operations, and session refresh checks.\n\nRecommended order:\n1. Auth / Login\n2. Smoke / Get Me (Bearer)\n3. Smoke / Get Me (Browser Session)\n4. Teams / List My Teams\n5. Channels / List My Channels In Team\n6. Channels / Get Channel By Name\n7. Posts / Create Post\n8. Posts / Get Channel Posts\n9. Posts / Search Posts\n\nRotation test:\n- Run Auth / Login once.\n- Use one or more smoke requests successfully.\n- Invalidate the server-side session manually (logout all sessions, change password, or wait for timeout in staging).\n- Re-run Smoke / Get Me (Bearer). It should fail with 401/403.\n- Run Auth / Login again and re-run the same request. It should succeed.\n\nThis collection tests the raw Mattermost API flow that the MCP server uses in login mode.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://mattermost.example.com"
+    },
+    {
+      "key": "apiBaseUrl",
+      "value": "{{baseUrl}}/api/v4"
+    },
+    {
+      "key": "loginId",
+      "value": "bot@example.com"
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "teamId",
+      "value": ""
+    },
+    {
+      "key": "channelId",
+      "value": ""
+    },
+    {
+      "key": "channelName",
+      "value": "town-square"
+    },
+    {
+      "key": "searchTerms",
+      "value": "smoke test"
+    },
+    {
+      "key": "postMessage",
+      "value": "postman smoke test {{$isoTimestamp}}"
+    },
+    {
+      "key": "bearerToken",
+      "value": ""
+    },
+    {
+      "key": "mmAuthToken",
+      "value": ""
+    },
+    {
+      "key": "mmCsrf",
+      "value": ""
+    },
+    {
+      "key": "mmUserId",
+      "value": ""
+    },
+    {
+      "key": "lastPostId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const responseJson = pm.response.json();",
+                  "const bearerToken = pm.response.headers.get('Token');",
+                  "if (bearerToken) {",
+                  "  pm.collectionVariables.set('bearerToken', bearerToken);",
+                  "}",
+                  "",
+                  "const setCookieHeaders = pm.response.headers.all().filter(function (header) {",
+                  "  return header.key.toLowerCase() === 'set-cookie';",
+                  "});",
+                  "",
+                  "function extractCookie(cookieName) {",
+                  "  for (const header of setCookieHeaders) {",
+                  "    const match = header.value.match(new RegExp(cookieName + '=([^;]+)'));",
+                  "    if (match) {",
+                  "      return match[1];",
+                  "    }",
+                  "  }",
+                  "  return '';",
+                  "}",
+                  "",
+                  "const mmAuthToken = extractCookie('MMAUTHTOKEN');",
+                  "const mmCsrf = extractCookie('MMCSRF');",
+                  "const mmUserId = extractCookie('MMUSERID') || responseJson.id || '';",
+                  "",
+                  "if (mmAuthToken) {",
+                  "  pm.collectionVariables.set('mmAuthToken', mmAuthToken);",
+                  "}",
+                  "if (mmCsrf) {",
+                  "  pm.collectionVariables.set('mmCsrf', mmCsrf);",
+                  "}",
+                  "if (mmUserId) {",
+                  "  pm.collectionVariables.set('mmUserId', mmUserId);",
+                  "}",
+                  "",
+                  "pm.test('bearer token captured', function () {",
+                  "  pm.expect(pm.collectionVariables.get('bearerToken')).to.not.eql('');",
+                  "});",
+                  "",
+                  "pm.test('browser session cookies captured', function () {",
+                  "  pm.expect(pm.collectionVariables.get('mmAuthToken')).to.not.eql('');",
+                  "  pm.expect(pm.collectionVariables.get('mmCsrf')).to.not.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login_id\": \"{{loginId}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/users/login",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "users",
+                "login"
+              ]
+            },
+            "description": "Creates a Mattermost login session. Test script extracts `Token`, `MMAUTHTOKEN`, `MMCSRF`, and `MMUSERID` from the response and stores them as collection variables."
+          },
+          "response": []
+        },
+        {
+          "name": "Clear Captured Tokens",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('bearerToken', '');",
+                  "pm.collectionVariables.set('mmAuthToken', '');",
+                  "pm.collectionVariables.set('mmCsrf', '');",
+                  "pm.collectionVariables.set('mmUserId', '');",
+                  "pm.collectionVariables.set('lastPostId', '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/system/ping",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "system",
+                "ping"
+              ]
+            },
+            "description": "Utility request. It clears saved tokens before execution and then calls `/system/ping`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Smoke",
+      "item": [
+        {
+          "name": "Get Me (Bearer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const responseJson = pm.response.json();",
+                  "if (responseJson.id) {",
+                  "  pm.collectionVariables.set('mmUserId', responseJson.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/users/me",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Verifies that the session token from login works as a Bearer token."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Me (Browser Session)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "MMAUTHTOKEN={{mmAuthToken}}; MMCSRF={{mmCsrf}}; MMUSERID={{mmUserId}}"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{mmCsrf}}"
+              },
+              {
+                "key": "X-Requested-With",
+                "value": "XMLHttpRequest"
+              }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/users/me",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Verifies browser-style cookie auth with `MMAUTHTOKEN`, `MMCSRF`, and `MMUSERID`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Teams",
+      "item": [
+        {
+          "name": "List My Teams",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const responseJson = pm.response.json();",
+                  "if (Array.isArray(responseJson) && responseJson.length > 0 && responseJson[0].id) {",
+                  "  pm.collectionVariables.set('teamId', responseJson[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/users/me/teams",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "teams"
+              ]
+            },
+            "description": "Lists teams visible to the logged-in user. Saves the first team ID into `teamId`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Channels",
+      "item": [
+        {
+          "name": "List My Channels In Team",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const responseJson = pm.response.json();",
+                  "if (Array.isArray(responseJson) && responseJson.length > 0 && responseJson[0].id) {",
+                  "  pm.collectionVariables.set('channelId', responseJson[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/users/me/teams/{{teamId}}/channels",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "teams",
+                "{{teamId}}",
+                "channels"
+              ]
+            },
+            "description": "Lists channels for the current user in a team. Saves the first channel ID into `channelId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Channel By Name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const responseJson = pm.response.json();",
+                  "if (responseJson.id) {",
+                  "  pm.collectionVariables.set('channelId', responseJson.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/teams/{{teamId}}/channels/name/{{channelName}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "channels",
+                "name",
+                "{{channelName}}"
+              ]
+            },
+            "description": "Fetches a channel by name and stores its ID in `channelId`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Posts",
+      "item": [
+        {
+          "name": "Create Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 or 200', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "const responseJson = pm.response.json();",
+                  "if (responseJson.id) {",
+                  "  pm.collectionVariables.set('lastPostId', responseJson.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_id\": \"{{channelId}}\",\n  \"message\": \"{{postMessage}}\"\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/posts",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "description": "Creates a test post in `channelId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Channel Posts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/channels/{{channelId}}/posts?page=0&per_page=20",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "channels",
+                "{{channelId}}",
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Reads recent posts from the channel."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"terms\": \"{{searchTerms}}\",\n  \"is_or_search\": false,\n  \"page\": 0,\n  \"per_page\": 20\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/teams/{{teamId}}/posts/search",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "posts",
+                "search"
+              ]
+            },
+            "description": "Searches posts in the selected team."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Rotation Check",
+      "item": [
+        {
+          "name": "Get Me With Saved Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200, 401, or 403', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/users/me",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Use this after invalidating the session server-side. Expected result: 401/403 before re-login, then run Auth / Login again and retry."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
