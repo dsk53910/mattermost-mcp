@@ -36,7 +36,6 @@ class MattermostClient:
         self.urlopen = urlopen
         self.base_headers = {
             "Accept": "application/json",
-            "User-Agent": "mattermost-mcp/0.1.0",
         }
         self.auth_headers: dict[str, str] = {}
         self.login_id = login_id

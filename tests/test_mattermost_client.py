@@ -95,6 +95,7 @@ class MattermostClientTests(unittest.TestCase):
             captured["cookie"] = req.headers["Cookie"]
             captured["csrf"] = req.headers["X-csrf-token"]
             captured["requested_with"] = req.headers["X-requested-with"]
+            captured["user_agent"] = req.headers.get("User-agent")
             return DummyResponse({"id": "user-1"})
 
         client = MattermostClient(
@@ -114,6 +115,7 @@ class MattermostClientTests(unittest.TestCase):
         )
         self.assertEqual(captured["csrf"], "csrf-cookie")
         self.assertEqual(captured["requested_with"], "XMLHttpRequest")
+        self.assertIsNone(captured["user_agent"])
 
     def test_login_mode_logs_in_on_start_and_uses_received_tokens(self) -> None:
         captured: dict[str, object] = {}
