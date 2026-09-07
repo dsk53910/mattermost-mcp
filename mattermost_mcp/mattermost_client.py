@@ -24,6 +24,7 @@ class MattermostClient:
         session_provider: Callable[[], BrowserSession] | None = None,
         timeout_seconds: float = 15.0,
         verify_ssl: bool = True,
+        lazy_session: bool = True,
         urlopen=request.urlopen,
     ) -> None:
         normalized = base_url.rstrip("/")
@@ -54,7 +55,8 @@ class MattermostClient:
                 user_id=user_id,
             )
         elif self.session_provider is not None:
-            self._refresh_from_session_provider()
+            if not lazy_session:
+                self._refresh_from_session_provider()
         elif self.can_relogin:
             self._login()
         else:
@@ -137,6 +139,7 @@ class MattermostClient:
             query = parse.urlencode(params, doseq=True)
             url = f"{url}?{query}"
 
+        self._ensure_auth()
         body = None
         headers = dict(self.base_headers)
         headers.update(self.auth_headers)
@@ -160,6 +163,17 @@ class MattermostClient:
             raise MattermostApiError(exc.code, message, details) from exc
         except error.URLError as exc:
             raise MattermostConnectionError(str(exc.reason)) from exc
+
+    def _ensure_auth(self) -> None:
+        if self.auth_headers:
+            return
+        if self.session_provider is not None:
+            self._refresh_from_session_provider()
+            return
+        if self.can_relogin:
+            self._login()
+            return
+        raise MattermostConnectionError("Mattermost client has no credentials")
 
     def _reauthorize(self) -> None:
         if self.session_provider is not None:

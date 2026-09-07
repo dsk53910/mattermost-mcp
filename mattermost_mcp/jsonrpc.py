@@ -11,12 +11,22 @@ class JsonRpcReader:
         self.stream = stream
 
     def read_message(self) -> dict[str, Any] | None:
-        headers: dict[str, str] = {}
+        line = self.stream.readline()
+        if not line:
+            return None
 
+        stripped = line.lstrip()
+        if stripped.startswith(b"{") or stripped.startswith(b"["):
+            try:
+                payload = json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError as exc:
+                raise JsonRpcError(-32700, f"Invalid JSON payload: {exc.msg}") from exc
+            if not isinstance(payload, dict):
+                raise JsonRpcError(-32700, "JSON-RPC payload must be an object")
+            return payload
+
+        headers: dict[str, str] = {}
         while True:
-            line = self.stream.readline()
-            if not line:
-                return None
             if line in {b"\r\n", b"\n"}:
                 break
 
@@ -26,6 +36,10 @@ class JsonRpcReader:
 
             name, value = decoded.split(":", 1)
             headers[name.lower()] = value.strip()
+
+            line = self.stream.readline()
+            if not line:
+                raise JsonRpcError(-32700, "Unexpected end of input")
 
         if "content-length" not in headers:
             raise JsonRpcError(-32700, "Missing Content-Length header")

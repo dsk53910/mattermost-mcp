@@ -2,6 +2,46 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+
+_DOTENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+DEFAULT_SESSION_FILE = Path(__file__).resolve().parent.parent / ".mm-session"
+
+
+def _parse_session_file(value: str | None) -> Path | None:
+    if value is None:
+        return DEFAULT_SESSION_FILE
+    stripped = value.strip()
+    if not stripped:
+        return None
+    path = Path(stripped).expanduser()
+    if not path.is_absolute():
+        return DEFAULT_SESSION_FILE.parent / path
+    return path
+
+
+def load_dotenv(path: Path | None = None) -> None:
+    env_path = path or _DOTENV_PATH
+    if not env_path.is_file():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[key] = value
 
 
 def _require_env(name: str) -> str:
@@ -76,6 +116,7 @@ class Settings:
     timeout_seconds: float = 15.0
     verify_ssl: bool = True
     auth_test_only: bool = False
+    session_file: Path | None = DEFAULT_SESSION_FILE
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -135,9 +176,11 @@ class Settings:
                 mfa_token=mfa_token,
             )
         elif auth_mode == "playwright":
-            if not sso_auth_url or not login_id or not password:
+            if not sso_auth_url:
+                raise ValueError("Environment variable MATTERMOST_SSO_AUTH_URL is required for playwright auth")
+            if not playwright_interactive and (not login_id or not password):
                 raise ValueError(
-                    "Environment variables MATTERMOST_SSO_AUTH_URL, MATTERMOST_LOGIN_ID and MATTERMOST_PASSWORD are required for playwright auth"
+                    "Environment variables MATTERMOST_LOGIN_ID and MATTERMOST_PASSWORD are required for non-interactive playwright auth"
                 )
             auth = AuthSettings(
                 mode="playwright",
@@ -171,7 +214,7 @@ class Settings:
                     password=password,
                     mfa_token=mfa_token,
                 )
-            elif sso_auth_url and login_id and password:
+            elif sso_auth_url and (playwright_interactive or (login_id and password)):
                 auth = AuthSettings(
                     mode="playwright",
                     sso_auth_url=sso_auth_url,
@@ -189,7 +232,7 @@ class Settings:
                 )
             else:
                 raise ValueError(
-                    "Provide MATTERMOST_TOKEN, MATTERMOST_MMAUTHTOKEN + MATTERMOST_MMCSRF, MATTERMOST_LOGIN_ID + MATTERMOST_PASSWORD, or MATTERMOST_SSO_AUTH_URL + MATTERMOST_LOGIN_ID + MATTERMOST_PASSWORD"
+                    "Provide MATTERMOST_TOKEN, MATTERMOST_MMAUTHTOKEN + MATTERMOST_MMCSRF, MATTERMOST_LOGIN_ID + MATTERMOST_PASSWORD, or MATTERMOST_SSO_AUTH_URL with interactive Playwright or login credentials"
                 )
 
         return cls(
@@ -198,4 +241,5 @@ class Settings:
             timeout_seconds=float(timeout_raw),
             verify_ssl=_parse_bool(os.getenv("MATTERMOST_VERIFY_SSL"), True),
             auth_test_only=_parse_bool(os.getenv("MATTERMOST_AUTH_TEST_ONLY"), False),
+            session_file=_parse_session_file(os.getenv("MATTERMOST_SESSION_FILE")),
         )

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import sys
 from typing import Any, Callable
+
+from mcp.server import Server as McpSdkServer
+from mcp.server.stdio import stdio_server
+from mcp.types import TextContent, Tool
 
 from .errors import JsonRpcError, MattermostApiError, MattermostConnectionError
 from .mattermost_client import MattermostClient
-from .jsonrpc import JsonRpcReader, JsonRpcWriter
 
 
 ToolHandler = Callable[[dict[str, Any]], Any]
@@ -29,29 +32,37 @@ class MattermostMcpServer:
     def __init__(self, client: MattermostClient) -> None:
         self.client = client
         self.tools = self._build_tools()
+        self._sdk = McpSdkServer("mattermost-mcp")
+        self._register_sdk()
 
     def serve_forever(self) -> None:
-        reader = JsonRpcReader(sys.stdin.buffer)
-        writer = JsonRpcWriter(sys.stdout.buffer)
+        asyncio.run(self._serve_stdio())
 
-        while True:
-            try:
-                message = reader.read_message()
-            except JsonRpcError as exc:
-                writer.write_message(self._error_response(None, exc.code, str(exc), exc.data))
-                continue
+    async def _serve_stdio(self) -> None:
+        async with stdio_server() as (read_stream, write_stream):
+            await self._sdk.run(
+                read_stream,
+                write_stream,
+                self._sdk.create_initialization_options(),
+            )
 
-            if message is None:
-                return
+    def _register_sdk(self) -> None:
+        @self._sdk.list_tools()
+        async def list_tools() -> list[Tool]:
+            return [
+                Tool(
+                    name=spec["name"],
+                    description=spec["description"],
+                    inputSchema=spec["inputSchema"],
+                )
+                for spec in self.tools.values()
+            ]
 
-            try:
-                response = self.handle_message(message)
-            except JsonRpcError as exc:
-                request_id = message.get("id") if isinstance(message, dict) else None
-                response = self._error_response(request_id, exc.code, str(exc), exc.data)
-
-            if response is not None:
-                writer.write_message(response)
+        @self._sdk.call_tool()
+        async def call_tool(name: str, arguments: Any) -> list[TextContent]:
+            result = self._call_tool({"name": name, "arguments": arguments or {}})
+            text = result["content"][0]["text"]
+            return [TextContent(type="text", text=text)]
 
     def handle_message(self, message: dict[str, Any]) -> dict[str, Any] | None:
         if message.get("jsonrpc") != "2.0":

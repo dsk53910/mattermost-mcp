@@ -81,7 +81,7 @@ For manually completing SSO, copying prompts, and taking screenshots, it is best
 
 In this mode the browser opens, the process waits for SSO to complete, verifies `GET /api/v4/users/me`, prints the result, and exits. The MCP server itself is not started, so you do not get JSON-RPC noise in the terminal.
 
-Important: `login`, `browser-session`, and `playwright` auth are more fragile than a Bearer token. The session can expire or be invalidated on logout or password change. The current implementation does not write tokens to disk and does not log them: they only live in process memory and are recreated when needed.
+Important: `login`, `browser-session`, and `playwright` auth are more fragile than a Bearer token. The session can expire or be invalidated on logout or password change. Playwright cookies are written to `MATTERMOST_SESSION_FILE` (default `.mm-session`, gitignored) after a successful SSO. Later MCP and CLI starts reuse that file and open a browser only on `401/403` or when the file is missing. The MCP stdio server does not log in during `initialize` or `tools/list`.
 
 ## Setup
 

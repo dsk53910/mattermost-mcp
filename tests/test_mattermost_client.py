@@ -233,6 +233,7 @@ class MattermostClientTests(unittest.TestCase):
             urlopen=fake_urlopen,
         )
 
+        self.assertEqual(client.auth_headers, {})
         response = client.get_me()
 
         self.assertEqual(response["id"], "user-1")
@@ -279,6 +280,7 @@ class MattermostClientTests(unittest.TestCase):
             urlopen=fake_urlopen,
         )
 
+        self.assertEqual(state["provider_calls"], 0)
         response = client.get_me()
 
         self.assertEqual(response["id"], "user-1")

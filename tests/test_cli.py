@@ -10,6 +10,7 @@ from mattermost_mcp.__main__ import (
     _run_auth_check,
     _run_read_channel,
     _run_send_message,
+    _should_attach_playwright,
 )
 
 
@@ -52,6 +53,11 @@ class FakeClient:
 
 
 class CliHelpersTests(unittest.TestCase):
+    def test_mcp_stdio_does_not_attach_playwright(self) -> None:
+        self.assertFalse(_should_attach_playwright(command=None, auth_test_only=False))
+        self.assertTrue(_should_attach_playwright(command="auth-check", auth_test_only=False))
+        self.assertTrue(_should_attach_playwright(command=None, auth_test_only=True))
+
     def test_run_auth_check(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr):

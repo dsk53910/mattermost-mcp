@@ -8,7 +8,8 @@ authors = [
   { name = "OpenAI Codex" }
 ]
 dependencies = [
-  "playwright>=1.52.0"
+  "mcp==1.29.0",
+  "playwright>=1.52.0",
 ]
 
 [tool.uv]

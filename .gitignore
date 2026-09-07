@@ -7,3 +7,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.mm-session
+.mm-session.tmp
+.mm-watch-state.json
+.mm-history/
+.scheduled/

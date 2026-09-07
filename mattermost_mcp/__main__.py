@@ -6,14 +6,16 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
-from .config import Settings
+from .config import Settings, load_dotenv
 from .mattermost_client import MattermostClient
-from .playwright_auth import MattermostPlaywrightAuthenticator
+from .playwright_auth import BrowserSession, MattermostPlaywrightAuthenticator
 from .server import MattermostMcpServer
+from .session_store import load_session, save_session
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    load_dotenv()
 
     try:
         settings = Settings.from_env()
@@ -22,12 +24,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     session_provider = None
-    if settings.auth.mode == "playwright":
+    # MCP stdio must not open Playwright: Cursor hangs in Connecting if a browser
+    # waits for interactive SSO. Refresh the session with `auth-check` in a terminal.
+    if settings.auth.mode == "playwright" and _should_attach_playwright(
+        command=args.command,
+        auth_test_only=settings.auth_test_only,
+    ):
         authenticator = MattermostPlaywrightAuthenticator(
             base_url=settings.base_url,
-            auth_url=settings.auth.sso_auth_url,
-            login_id=settings.auth.login_id,
-            password=settings.auth.password,
+            auth_url=settings.auth.sso_auth_url or "",
+            login_id=settings.auth.login_id or "",
+            password=settings.auth.password or "",
             verify_ssl=settings.verify_ssl,
             headless=settings.auth.playwright_headless,
             interactive=settings.auth.playwright_interactive,
@@ -39,20 +46,25 @@ def main(argv: list[str] | None = None) -> int:
             post_login_url_prefix=settings.auth.playwright_post_login_url_prefix,
             success_selector=settings.auth.playwright_success_selector,
         )
-        session_provider = authenticator.login
+        session_provider = _persisting_session_provider(
+            authenticator.login,
+            settings.session_file,
+        )
 
+    stored = None if settings.auth.token else load_session(settings.session_file)
     client = MattermostClient(
         base_url=settings.base_url,
         token=settings.auth.token,
-        session_token=settings.auth.session_token,
-        csrf_token=settings.auth.csrf_token,
-        user_id=settings.auth.user_id,
+        session_token=settings.auth.session_token or (stored.session_token if stored else None),
+        csrf_token=settings.auth.csrf_token or (stored.csrf_token if stored else None),
+        user_id=settings.auth.user_id or (stored.user_id if stored else None),
         login_id=settings.auth.login_id,
         password=settings.auth.password,
         mfa_token=settings.auth.mfa_token,
         session_provider=session_provider,
         timeout_seconds=settings.timeout_seconds,
         verify_ssl=settings.verify_ssl,
+        lazy_session=True,
     )
 
     if args.command == "read-channel":
@@ -119,6 +131,20 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     send_message.add_argument("--json", action="store_true", help="print raw created post JSON")
 
     return parser.parse_args(argv)
+
+
+def _should_attach_playwright(*, command: str | None, auth_test_only: bool) -> bool:
+    return command is not None or auth_test_only
+
+
+def _persisting_session_provider(login, session_file):
+    def provider() -> BrowserSession:
+        session = login()
+        save_session(session_file, session)
+        print("Mattermost session saved for reuse.", file=sys.stderr, flush=True)
+        return session
+
+    return provider
 
 
 def _run_auth_check(client: MattermostClient) -> int:
